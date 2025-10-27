@@ -2,21 +2,21 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+import plotly.graph_objects as go
 from scipy.stats import norm, skew, kurtosis
 
 # ──────────────────────────────────────────────
 # Page setup
 # ──────────────────────────────────────────────
-st.set_page_config(page_title="Z-Score Outlier Detection", layout="centered")
-st.title("📊 Z-Score Outlier Detection with Distribution Analysis")
+st.set_page_config(page_title="Z-Score Outlier & Distribution Explorer", layout="centered")
+st.title("📊 Z-Score Outlier Detection + Interactive Normal Distribution")
 
 st.markdown("""
-This app detects **outliers** using three methods:
-1. **Classic (Mean ± k·σ)** – sensitive to extremes  
-2. **Robust (Median/MAD)** – resistant to skew/outliers  
-3. **Iterative 3σ Clipping** – recomputes mean & σ until stable  
-
-It also plots the **distribution curve** to show *skewness* and *outlier effects*.
+Explore **Z-scores**, **outliers**, and the **normal distribution** interactively.  
+This app combines:
+- 🔍 Outlier detection (Classic / Robust / Iterative)
+- 📈 Histogram + Normal curve with skewness
+- 🧮 Dynamic Z-score and cumulative probability visualizer
 """)
 
 # ──────────────────────────────────────────────
@@ -51,7 +51,7 @@ else:
     data = df[col].values
 
 # ──────────────────────────────────────────────
-# Method selection
+# Outlier detection
 # ──────────────────────────────────────────────
 st.subheader("2️⃣ Choose detection method and threshold")
 
@@ -62,23 +62,18 @@ method = st.radio(
 )
 threshold = st.slider("Threshold", 1.5, 5.0, 3.0, 0.1)
 
-# ──────────────────────────────────────────────
-# Outlier computation
-# ──────────────────────────────────────────────
 if method == "Classic (Mean / Std Dev)":
     mean = np.mean(data)
     std = np.std(data, ddof=1)
     z = (data - mean) / std
     outlier = np.abs(z) > threshold
     label = "Z-score"
-
 elif method == "Robust (Median / MAD)":
     med = np.median(data)
     mad = np.median(np.abs(data - med)) or 1e-9
     z = 0.6745 * (data - med) / mad
     outlier = np.abs(z) > 3.5
     label = "Modified Z"
-
 else:
     x = data.astype(float).copy()
     mask = np.ones_like(x, dtype=bool)
@@ -94,56 +89,104 @@ else:
     outlier = ~mask
     label = "Iterative Z"
 
-# ──────────────────────────────────────────────
-# Results
-# ──────────────────────────────────────────────
-st.subheader("3️⃣ Results Table")
-
 res = pd.DataFrame({"Value": data, label: np.round(z, 3), "Outlier": outlier})
 st.dataframe(res, use_container_width=True)
 st.success(f"Detected **{outlier.sum()}** outlier(s) out of {len(data)} observations.")
 
 # ──────────────────────────────────────────────
-# Visualization 1 — Scatter plot
+# Histogram + Normal Curve
 # ──────────────────────────────────────────────
-st.subheader("4️⃣ Scatter Plot")
-
-fig1, ax1 = plt.subplots(figsize=(8, 4))
-ax1.scatter(range(len(data)), data, c=~outlier, cmap="coolwarm", s=80, edgecolors="black")
-ax1.axhline(np.mean(data), color="green", linestyle="--", label="Mean")
-ax1.set_xlabel("Index")
-ax1.set_ylabel("Value")
-ax1.legend()
-st.pyplot(fig1)
-
-# ──────────────────────────────────────────────
-# Visualization 2 — Distribution & Skewness
-# ──────────────────────────────────────────────
-st.subheader("5️⃣ Distribution and Skewness Analysis")
+st.subheader("3️⃣ Distribution Analysis")
 
 skewness = skew(data)
 kurt = kurtosis(data)
 mean = np.mean(data)
 std = np.std(data, ddof=1)
 
-fig2, ax2 = plt.subplots(figsize=(8, 4))
-# Histogram
-count, bins, _ = ax2.hist(data, bins=20, color="lightgray", alpha=0.7, density=True, label="Data")
-# Normal PDF curve
+fig1, ax = plt.subplots(figsize=(8, 4))
+count, bins, _ = ax.hist(data, bins=20, color="lightgray", alpha=0.7, density=True)
 x_axis = np.linspace(min(data), max(data), 200)
-ax2.plot(x_axis, norm.pdf(x_axis, mean, std), color="blue", lw=2, label="Normal Curve")
-ax2.set_title("Histogram with Fitted Normal Distribution")
-ax2.legend()
-st.pyplot(fig2)
+ax.plot(x_axis, norm.pdf(x_axis, mean, std), color="blue", lw=2, label="Normal Curve")
+ax.axvline(mean, color="green", linestyle="--", label="Mean")
+for k in [1, 2, 3]:
+    ax.axvline(mean + k*std, color="red", linestyle=":", lw=1)
+    ax.axvline(mean - k*std, color="red", linestyle=":", lw=1)
+ax.legend()
+ax.set_title("Histogram with Fitted Normal Distribution")
+st.pyplot(fig1)
+st.info(f"Skewness = {skewness:.3f} Kurtosis = {kurt:.3f}")
 
-st.info(f"**Skewness:** {skewness:.3f}  **Kurtosis:** {kurt:.3f}")
+# ──────────────────────────────────────────────
+# Interactive Plotly Normal Distribution
+# ──────────────────────────────────────────────
+st.subheader("4️⃣ Interactive Normal Distribution & Z-Score")
 
-if skewness > 0.5:
-    st.warning("⚠️ The distribution is **positively skewed** (right tail longer).")
-elif skewness < -0.5:
-    st.warning("⚠️ The distribution is **negatively skewed** (left tail longer).")
-else:
-    st.success("✅ The distribution is approximately **symmetric**.")
+x_vals = np.linspace(mean - 4*std, mean + 4*std, 800)
+y_vals = norm.pdf(x_vals, mean, std)
 
-st.markdown("---")
+X = st.slider("Select a value X:", float(x_vals.min()), float(x_vals.max()), float(mean))
+z_score = (X - mean) / std
+cdf = norm.cdf(X, mean, std)
+
+st.metric(label="Z-Score", value=f"{z_score:.3f}")
+st.metric(label="Cumulative Probability", value=f"{cdf:.4f}")
+
+fig2 = go.Figure()
+
+# Normal curve
+fig2.add_trace(go.Scatter(x=x_vals, y=y_vals, mode='lines', line=dict(color='blue', width=2), name="Normal PDF"))
+
+# Shaded area up to X
+mask = x_vals <= X
+fig2.add_trace(go.Scatter(
+    x=np.concatenate(([x_vals[0]], x_vals[mask], [X])),
+    y=np.concatenate(([0], y_vals[mask], [0])),
+    fill='toself', fillcolor='rgba(0,176,246,0.3)', line=dict(color='rgba(0,0,0,0)'),
+    hoverinfo='skip', name=f'Area ≤ X ({cdf:.3f})'
+))
+
+# Mean line
+fig2.add_trace(go.Scatter(x=[mean, mean], y=[0, max(y_vals)],
+                          mode='lines', line=dict(color='green', dash='dash'),
+                          name='Mean (μ)'))
+
+# X marker
+fig2.add_trace(go.Scatter(
+    x=[X, X],
+    y=[0, norm.pdf(X, mean, std)],
+    mode='lines+text',
+    line=dict(color='red', width=2),
+    name=f'X = {X:.2f}',
+    text=[f"Z = {z_score:.2f}"],
+    textposition="top right"
+))
+
+# ±σ markers
+for k in [1, 2, 3]:
+    for side in [-1, 1]:
+        x_pos = mean + side * k * std
+        fig2.add_trace(go.Scatter(
+            x=[x_pos, x_pos],
+            y=[0, norm.pdf(x_pos, mean, std)],
+            mode='lines',
+            line=dict(color='gray', dash='dot', width=1),
+            showlegend=False
+        ))
+
+fig2.update_layout(
+    title="Normal Distribution with Dynamic Z-Score",
+    xaxis_title="Value (X)",
+    yaxis_title="Probability Density",
+    template="plotly_white",
+    hovermode="x unified"
+)
+
+st.plotly_chart(fig2, use_container_width=True)
+
+st.markdown(f"""
+**Interpretation:**  
+- Z-score = {z_score:.2f} → {abs(z_score):.2f} σ {'above' if z_score>0 else 'below'} the mean  
+- Probability of value ≤ X: **{cdf:.3%}**
+""")
+
 st.caption("Educational demo • Generated by GPT-5 · © Alastair McBride 2025")
