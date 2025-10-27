@@ -6,22 +6,22 @@ import matplotlib.pyplot as plt
 # ──────────────────────────────────────────────
 # Page setup
 # ──────────────────────────────────────────────
-st.set_page_config(
-    page_title="Z-Score Outlier Detection",
-    layout="centered"
-)
-
-st.title("📊 Z-Score Outlier Detection")
+st.set_page_config(page_title="Z-Score Outlier Detection", layout="centered")
+st.title("📊 Z-Score Outlier Detection (Enhanced)")
 
 st.markdown("""
-This app demonstrates **Z-score–based outlier detection**.  
-It standardizes each observation and highlights those beyond  
-a chosen threshold (e.g. |z| > 3).
+This app detects **outliers** using three alternative Z-score methods:
 
-**Formula:**  
-\\[
-z_i = \\frac{x_i - \\mu}{\\sigma}
-\\]
+1. **Classic** — mean ± k·σ (sensitive to extreme values)  
+2. **Robust (Median/MAD)** — resistant to skew or extremes  
+3. **Iterative 3σ Clipping** — recomputes mean & σ until stable  
+
+---
+
+**Formulas**
+
+- Classic: \\( z_i = \\frac{x_i - \\mu}{\\sigma} \\)  
+- Robust: \\( z_i = 0.6745\\frac{x_i - \\text{median}}{\\text{MAD}} \\)
 """)
 
 # ──────────────────────────────────────────────
@@ -29,76 +29,97 @@ z_i = \\frac{x_i - \\mu}{\\sigma}
 # ──────────────────────────────────────────────
 st.subheader("1️⃣ Upload or enter numeric data")
 
-data_source = st.radio(
-    "Choose input method:",
-    ["Manual entry", "Upload CSV"],
-    horizontal=True
-)
+src = st.radio("Choose input method:", ["Manual entry", "Upload CSV"], horizontal=True)
 
-if data_source == "Manual entry":
-    raw_text = st.text_area(
-        "Enter numbers separated by commas:",
-        "10, 12, 12, 13, 12, 11, 14, 13, 100"
+if src == "Manual entry":
+    text = st.text_area(
+        "Enter comma-separated numbers:",
+        "98.3, 101.2, 99.8, 102.5, 97.9, 100.6, 98.7, 101.1, 103.2, 97.4, "
+        "100.9, 99.5, 101.7, 98.1, 102.3, 100.2, 99.1, 98.9, 103.4, 101.3, "
+        "99.7, 97.6, 100.4, 102.1, 98.8, 99.9, 101.5, 100.8, 98.4, 99.3, "
+        "97.8, 102.7, 100.1, 99.6, 98.2, 100.5, 103.1, 99.4, 101.8, 97.7, "
+        "250, -50, 300, 400, -75, 500, 99, 100, 101, 98"
     )
     try:
-        data = np.array([float(x.strip()) for x in raw_text.split(",") if x.strip() != ""])
+        data = np.array([float(x.strip()) for x in text.split(",") if x.strip()])
     except ValueError:
         st.error("Please enter valid numeric values separated by commas.")
         st.stop()
 else:
-    uploaded = st.file_uploader("Upload a CSV with one numeric column", type=["csv"])
-    if uploaded is not None:
-        df = pd.read_csv(uploaded)
-        st.write(df.head())
-        col = st.selectbox("Select numeric column", df.columns)
-        data = df[col].values
-    else:
-        st.info("Please upload a CSV file to continue.")
+    file = st.file_uploader("Upload a CSV with one numeric column", type=["csv"])
+    if not file:
+        st.info("Awaiting CSV upload…")
         st.stop()
+    df = pd.read_csv(file)
+    st.write(df.head())
+    col = st.selectbox("Select numeric column", df.columns)
+    data = df[col].values
 
 # ──────────────────────────────────────────────
-# Z-score calculation
+# Method selection
 # ──────────────────────────────────────────────
-st.subheader("2️⃣ Choose threshold and calculate Z-scores")
+st.subheader("2️⃣ Choose detection method and threshold")
 
-threshold = st.slider("Z-score threshold for outliers", 1.5, 4.0, 3.0, 0.1)
+method = st.radio(
+    "Detection method:",
+    ["Classic (Mean / Std Dev)", "Robust (Median / MAD)", "Iterative 3σ clipping"],
+    horizontal=True
+)
+threshold = st.slider("Threshold", 1.5, 5.0, 3.0, 0.1)
 
-mean = np.mean(data)
-std = np.std(data)
-z_scores = (data - mean) / std
-outliers = np.abs(z_scores) > threshold
+# ──────────────────────────────────────────────
+# Z-score computation
+# ──────────────────────────────────────────────
+if method == "Classic (Mean / Std Dev)":
+    mean = np.mean(data)
+    std = np.std(data, ddof=1)
+    z = (data - mean) / std
+    outlier = np.abs(z) > threshold
+    label = "Z-score"
 
+elif method == "Robust (Median / MAD)":
+    med = np.median(data)
+    mad = np.median(np.abs(data - med)) or 1e-9
+    z = 0.6745 * (data - med) / mad
+    outlier = np.abs(z) > 3.5
+    label = "Modified Z"
+
+else:  # Iterative clipping
+    x = data.astype(float).copy()
+    mask = np.ones_like(x, dtype=bool)
+    while True:
+        mu = np.mean(x[mask])
+        sd = np.std(x[mask], ddof=1)
+        z_all = (x - mu) / sd
+        new_mask = np.abs(z_all) <= threshold
+        if np.all(new_mask == mask):
+            break
+        mask = new_mask
+    z = z_all
+    outlier = ~mask
+    label = "Iterative Z"
+
+# ──────────────────────────────────────────────
 # Results table
-results = pd.DataFrame({
-    "Value": data,
-    "Z-score": np.round(z_scores, 3),
-    "Outlier": outliers
-})
-st.dataframe(results, use_container_width=True)
+# ──────────────────────────────────────────────
+st.subheader("3️⃣ Results")
+
+res = pd.DataFrame({"Value": data, label: np.round(z, 3), "Outlier": outlier})
+st.dataframe(res, use_container_width=True)
+st.success(f"Detected **{outlier.sum()}** outlier(s) out of {len(data)} observations.")
 
 # ──────────────────────────────────────────────
 # Visualization
 # ──────────────────────────────────────────────
-st.subheader("3️⃣ Visualize results")
+st.subheader("4️⃣ Visualize")
 
 fig, ax = plt.subplots(figsize=(8, 4))
-ax.scatter(range(len(data)), data, c=~outliers, cmap='coolwarm', s=80, edgecolors='black')
-ax.axhline(mean, color='green', linestyle='--', label=f"Mean = {mean:.2f}")
-ax.set_xlabel("Observation Index")
+ax.scatter(range(len(data)), data, c=~outlier, cmap="coolwarm", s=80, edgecolors="black")
+ax.axhline(np.mean(data), color="green", linestyle="--", label="Mean")
+ax.set_xlabel("Index")
 ax.set_ylabel("Value")
 ax.legend()
 st.pyplot(fig)
-
-# ──────────────────────────────────────────────
-# Summary
-# ──────────────────────────────────────────────
-num_outliers = np.sum(outliers)
-st.success(f"Detected **{num_outliers}** outlier(s) out of {len(data)} observations.")
-
-if num_outliers > 0:
-    st.write("🔎 Outlier values:", data[outliers])
-else:
-    st.write("✅ No outliers detected under current threshold.")
 
 st.markdown("---")
 st.caption("Educational demo • Generated by GPT-5 · © Alastair McBride 2025")
