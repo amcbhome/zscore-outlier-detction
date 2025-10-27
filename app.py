@@ -84,6 +84,56 @@ def analyze_dataset(data, label="Original Dataset"):
     st.dataframe(z_table, use_container_width=True)
 
     # Visualization
+
+    # ──────────────────────────────────────────────
+# Empirical Rule Chart (68–95–99.7%)
+# ──────────────────────────────────────────────
+st.subheader("📊 Empirical Rule — 68%, 95%, 99.7% Coverage")
+
+import matplotlib.pyplot as plt
+from scipy.stats import norm
+
+# Generate standard normal x-axis and PDF
+x = np.linspace(-4, 4, 1000)
+y = norm.pdf(x, 0, 1)
+
+fig, ax = plt.subplots(figsize=(8, 4))
+ax.plot(x, y, color="blue", lw=2)
+
+# Shade the regions corresponding to 68%, 95%, and 99.7%
+# 1σ region
+ax.fill_between(x, 0, y, where=(x > -1) & (x < 1), color="skyblue", alpha=0.5)
+# 2σ region
+ax.fill_between(x, 0, y, where=(x > -2) & (x < 2), color="lightblue", alpha=0.3)
+# 3σ region
+ax.fill_between(x, 0, y, where=(x > -3) & (x < 3), color="powderblue", alpha=0.2)
+
+# Vertical dashed lines for ±1σ, ±2σ, ±3σ
+for i in range(-3, 4):
+    ax.axvline(i, color="red", linestyle="--", lw=1)
+    if i != 0:
+        ax.text(i, 0.02, f"{i:+d} SD", color="darkred",
+                ha="center", fontsize=9, fontweight="bold")
+
+# Mean line (center)
+ax.axvline(0, color="black", linestyle="-", lw=1.5)
+ax.text(0, 0.43, "Mean (μ)", ha="center", fontsize=10, fontweight="bold")
+
+# Percentage labels for the empirical rule
+ax.text(0, 0.2, "68%", ha="center", fontsize=11, color="navy", fontweight="bold")
+ax.text(0, 0.1, "95%", ha="center", fontsize=11, color="navy", fontweight="bold")
+ax.text(0, 0.03, "99.7%", ha="center", fontsize=11, color="navy", fontweight="bold")
+
+# Tidy up
+ax.set_title("Standard Normal Distribution — Empirical Rule (68–95–99.7%)", fontsize=12)
+ax.set_xlabel("Standard Deviations from the Mean (Z)")
+ax.set_ylabel("Density")
+ax.set_xlim(-4, 4)
+ax.set_ylim(0, 0.45)
+ax.grid(False)
+
+st.pyplot(fig)
+
     st.subheader("📈 Normal Distribution Visualization")
     x = np.linspace(mean - 4*std, mean + 4*std, 800)
     y = norm.pdf(x, mean, std)
