@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import matplotlib.pyplot as plt
 import plotly.graph_objects as go
 from scipy.stats import norm, skew, kurtosis
 
@@ -11,12 +12,12 @@ st.set_page_config(page_title="Classic Z-Score Analyzer", layout="centered")
 st.title("📊 Classic Z-Score Analyzer")
 
 st.markdown("""
-Upload a CSV with **one numeric column**.  
+Upload a CSV file containing **one numeric column**.  
 This app will:
 - Compute **summary statistics** and **Z-scores**  
 - Describe the **shape** of the distribution (skewness / kurtosis)  
-- Plot the **normal curve** with ±1σ, ±2σ, ±3σ markers  
-- Ask if **outliers** (|Z| > 3) should be removed and the dataset re-analysed
+- Identify and optionally **remove outliers** (|Z| > 3)  
+- Display the **Empirical Rule (68–95–99.7%)** using your dataset’s mean and standard deviation  
 """)
 
 # ──────────────────────────────────────────────
@@ -33,15 +34,16 @@ col = st.selectbox("Select numeric column", df.columns)
 data = df[col].dropna().astype(float).values
 
 # ──────────────────────────────────────────────
-# Function: classic z-score analysis
+# Function: Classic Z-score analysis
 # ──────────────────────────────────────────────
-def analyze_dataset(data, label="Original Dataset"):
+def analyze_dataset(data, label="Dataset"):
     n = len(data)
     mean = np.mean(data)
     std = np.std(data, ddof=1)
     minimum, maximum = np.min(data), np.max(data)
     skw, krt = skew(data), kurtosis(data)
 
+    # Summary stats
     summary = pd.DataFrame({
         "n": [n],
         "Min": [minimum],
@@ -56,6 +58,8 @@ def analyze_dataset(data, label="Original Dataset"):
     st.dataframe(summary, use_container_width=True)
 
     # Distribution description
+    st.subheader("🧠 Distribution Description")
+
     if abs(skw) < 0.5:
         shape = "approximately **symmetric** (normal-like)"
     elif skw > 0.5:
@@ -83,104 +87,17 @@ def analyze_dataset(data, label="Original Dataset"):
     st.subheader("📊 Z-Scores Table")
     st.dataframe(z_table, use_container_width=True)
 
-    # Visualization
-
-    # ──────────────────────────────────────────────
-# Empirical Rule Chart (68–95–99.7%)
-# ──────────────────────────────────────────────
-st.subheader("📊 Empirical Rule — 68%, 95%, 99.7% Coverage")
-
-import matplotlib.pyplot as plt
-from scipy.stats import norm
-
-# Generate standard normal x-axis and PDF
-x = np.linspace(-4, 4, 1000)
-y = norm.pdf(x, 0, 1)
-
-fig, ax = plt.subplots(figsize=(8, 4))
-ax.plot(x, y, color="blue", lw=2)
-
-# Shade the regions corresponding to 68%, 95%, and 99.7%
-# 1σ region
-ax.fill_between(x, 0, y, where=(x > -1) & (x < 1), color="skyblue", alpha=0.5)
-# 2σ region
-ax.fill_between(x, 0, y, where=(x > -2) & (x < 2), color="lightblue", alpha=0.3)
-# 3σ region
-ax.fill_between(x, 0, y, where=(x > -3) & (x < 3), color="powderblue", alpha=0.2)
-
-# Vertical dashed lines for ±1σ, ±2σ, ±3σ
-for i in range(-3, 4):
-    ax.axvline(i, color="red", linestyle="--", lw=1)
-    if i != 0:
-        ax.text(i, 0.02, f"{i:+d} SD", color="darkred",
-                ha="center", fontsize=9, fontweight="bold")
-
-# Mean line (center)
-ax.axvline(0, color="black", linestyle="-", lw=1.5)
-ax.text(0, 0.43, "Mean (μ)", ha="center", fontsize=10, fontweight="bold")
-
-# Percentage labels for the empirical rule
-ax.text(0, 0.2, "68%", ha="center", fontsize=11, color="navy", fontweight="bold")
-ax.text(0, 0.1, "95%", ha="center", fontsize=11, color="navy", fontweight="bold")
-ax.text(0, 0.03, "99.7%", ha="center", fontsize=11, color="navy", fontweight="bold")
-
-# Tidy up
-ax.set_title("Standard Normal Distribution — Empirical Rule (68–95–99.7%)", fontsize=12)
-ax.set_xlabel("Standard Deviations from the Mean (Z)")
-ax.set_ylabel("Density")
-ax.set_xlim(-4, 4)
-ax.set_ylim(0, 0.45)
-ax.grid(False)
-
-st.pyplot(fig)
-
-    st.subheader("📈 Normal Distribution Visualization")
-    x = np.linspace(mean - 4*std, mean + 4*std, 800)
-    y = norm.pdf(x, mean, std)
-
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(x=x, y=y, mode="lines", line=dict(color="blue", width=2),
-                             name="Normal PDF"))
-    fig.add_trace(go.Scatter(x=[mean, mean], y=[0, max(y)],
-                             mode="lines", line=dict(color="green", dash="dash"),
-                             name="Mean (μ)"))
-
-    for k in [1, 2, 3]:
-        fig.add_trace(go.Scatter(x=[mean + k*std, mean + k*std],
-                                 y=[0, norm.pdf(mean + k*std, mean, std)],
-                                 mode="lines", line=dict(color="gray", dash="dot"),
-                                 showlegend=False))
-        fig.add_trace(go.Scatter(x=[mean - k*std, mean - k*std],
-                                 y=[0, norm.pdf(mean - k*std, mean, std)],
-                                 mode="lines", line=dict(color="gray", dash="dot"),
-                                 showlegend=False))
-
-    # Overlay data points
-    colors = np.where(np.abs(z_scores) > 3, "crimson", "red")
-    fig.add_trace(go.Scatter(
-        x=data, y=norm.pdf(data, mean, std),
-        mode="markers", name="Data Points",
-        marker=dict(color=colors, size=6, symbol="circle")
-    ))
-
-    fig.update_layout(
-        title=f"Normal Distribution — {label}",
-        xaxis_title="Value (X)",
-        yaxis_title="Probability Density",
-        template="plotly_white"
-    )
-    st.plotly_chart(fig, use_container_width=True)
-
+    # Return for re-analysis
     return z_table, mean, std
 
 
 # ──────────────────────────────────────────────
-# Run initial analysis
+# Initial analysis
 # ──────────────────────────────────────────────
 z_table, mean, std = analyze_dataset(data, "Original Dataset")
 
 # ──────────────────────────────────────────────
-# Ask user about outlier removal
+# Outlier removal step
 # ──────────────────────────────────────────────
 st.markdown("---")
 st.subheader("🧹 Outlier Removal Option")
@@ -192,8 +109,67 @@ if num_outliers > 0:
         clean_data = data[np.abs((data - mean) / std) <= 3]
         st.success(f"Removed {num_outliers} outlier(s). Recalculating statistics…")
         analyze_dataset(clean_data, "After Outlier Removal")
+        mean = np.mean(clean_data)
+        std = np.std(clean_data, ddof=1)
+        data = clean_data
 else:
     st.success("No outliers detected — no removal necessary.")
 
-st.caption("Educational demo • Classic Z-Score method • Generated by GPT-5 · © Alastair McBride 2025")
+# ──────────────────────────────────────────────
+# Empirical Rule Chart (68–95–99.7%) using dataset μ and σ
+# ──────────────────────────────────────────────
+st.markdown("---")
+st.subheader("📊 Empirical Rule — 68%, 95%, 99.7% Coverage")
 
+x = np.linspace(mean - 4*std, mean + 4*std, 1000)
+y = norm.pdf(x, mean, std)
+
+fig, ax = plt.subplots(figsize=(8, 4))
+ax.plot(x, y, color="blue", lw=2)
+
+# Shade the ±1σ, ±2σ, ±3σ regions
+ax.fill_between(x, 0, y, where=(x > mean - std) & (x < mean + std),
+                color="skyblue", alpha=0.5, label="68% within ±1σ")
+ax.fill_between(x, 0, y, where=(x > mean - 2*std) & (x < mean + 2*std),
+                color="lightblue", alpha=0.3, label="95% within ±2σ")
+ax.fill_between(x, 0, y, where=(x > mean - 3*std) & (x < mean + 3*std),
+                color="powderblue", alpha=0.2, label="99.7% within ±3σ")
+
+# Vertical lines at ±1σ, ±2σ, ±3σ
+for i in range(-3, 4):
+    x_pos = mean + i*std
+    ax.axvline(x_pos, color="red", linestyle="--", lw=1)
+    if i != 0:
+        ax.text(x_pos, 0.01, f"{i:+d}σ", color="darkred",
+                ha="center", fontsize=9, fontweight="bold")
+
+# Mean line and label
+ax.axvline(mean, color="black", lw=1.5)
+ax.text(mean, max(y)*0.93, "Mean (μ)", ha="center", fontsize=10, fontweight="bold")
+
+# Labels for coverage
+ax.text(mean, max(y)*0.35, "68%", ha="center", fontsize=11, color="navy", fontweight="bold")
+ax.text(mean, max(y)*0.20, "95%", ha="center", fontsize=11, color="navy", fontweight="bold")
+ax.text(mean, max(y)*0.08, "99.7%", ha="center", fontsize=11, color="navy", fontweight="bold")
+
+# Style
+ax.set_title("Normal Distribution — Empirical Rule (68–95–99.7%)", fontsize=12)
+ax.set_xlabel("Value (X)")
+ax.set_ylabel("Density")
+ax.set_xlim(mean - 4*std, mean + 4*std)
+ax.set_ylim(0, max(y)*1.1)
+ax.grid(False)
+st.pyplot(fig)
+
+# Explanation text
+st.markdown("""
+The **Empirical Rule** (or **68–95–99.7 Rule**) describes how data behave in a normal distribution:
+
+- About **68%** of values lie within **±1 standard deviation** of the mean  
+- About **95%** lie within **±2 standard deviations**  
+- About **99.7%** lie within **±3 standard deviations**  
+
+Values beyond ±3σ are typically considered **outliers** in classical Z-score analysis.
+""")
+
+st.caption("Educational demo • Classic Z-Score method • Generated by GPT-5 · © Alastair McBride 2025")
